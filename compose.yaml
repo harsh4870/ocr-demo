@@ -1,0 +1,17 @@
+# Local test of the serving container (same image Cloud Run runs).
+# Use `make up` - it copies the model + samples into serve/model/ before building.
+services:
+  ocr-api:
+    build: serve
+    image: ocr-api
+    container_name: ocr-api
+    ports:
+      - "8080:8080"
+    environment:
+      REVIEW_BELOW: "0.9"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
