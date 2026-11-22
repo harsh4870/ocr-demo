@@ -52,6 +52,10 @@ It already has git, gcloud, Docker and Python.
 
 # Part 1: run it on your laptop
 
+Under most commands I've put the output I got on my machine so you can compare it with yours. Times,
+file names and the example plate will be different for you. The Google Cloud outputs in Part 2 are
+trimmed and the project name and IDs in them are made up.
+
 ## Step 1: get the code
 
 ```bash
@@ -90,10 +94,28 @@ make data
 ```
 
 You get 20,000 training images and 1,000 validation images in `data/plates/`. It takes around two
-minutes. Have a look at a few:
+minutes. You should see:
+
+```text
+.venv/bin/python data/generate.py --out data/plates
+train fonts: ['Arial Bold', 'Arial Narrow Bold', 'DIN Condensed Bold', 'Tahoma Bold', 'Verdana Bold'], held-out val font: ['DIN Alternate Bold']
+wrote 20000 train + 1000 val images to data/plates
+```
+
+That's on a Mac. On Linux or Cloud Shell the font names will be DejaVu or Liberation instead.
+
+Have a look at a few:
 
 ```bash
 ls data/plates/train | head -5
+```
+
+```text
+21BH0000GM_16285.jpg
+21BH0055HU_11708.jpg
+21BH0060XV_13793.jpg
+21BH0061JB_9438.jpg
+21BH0066UE_16530.jpg
 ```
 
 Every file is named `<PLATE>_<number>.jpg`, for example `MH12AB1234_7.jpg`. The part before the
@@ -115,14 +137,87 @@ Quick check first. This uses 2,000 images and 2 epochs, so it finishes in about 
 make train-smoke
 ```
 
-You should see the loss go down. Accuracy will still be 0% after 2 epochs. That is normal for this kind
-of model, it needs a few epochs before it starts getting full plates right.
+This is what mine printed:
+
+```text
+.venv/bin/python data/generate.py --out data/small --train 2000 --val 200
+train fonts: ['Arial Bold', 'Arial Narrow Bold', 'DIN Condensed Bold', 'Tahoma Bold', 'Verdana Bold'], held-out val font: ['DIN Alternate Bold']
+wrote 2000 train + 200 val images to data/small
+.venv/bin/python train/train.py --data data/small --out artifacts-smoke --epochs 2
+loaded 2000 train / 200 val in 0s, image (1, 32, 128), charset='0123456789ABCDEFGHJKLMNOPQRSTUVWXYZ', device=mps
+epoch  1  loss 5.431  val_acc 0.000  (7s)  e.g. 21BH0321GG -> 
+epoch  2  loss 3.422  val_acc 0.000  (6s)  e.g. 21BH0321GG -> 
+exported artifacts-smoke/model.onnx (4.8 MB), max diff vs torch 9.54e-07
+done. best val exact-match accuracy 0.000; artifacts in artifacts-smoke
+```
+
+The loss goes down from 5.4 to 3.4. Accuracy is still 0% and the model reads nothing yet. That is normal
+for this kind of model, it needs a few epochs before it starts getting full plates right. `device=mps`
+means it ran on the Apple GPU. You will see `cpu` or `cuda` on other machines.
+
+You may also see a `UserWarning` from PyTorch about LSTM and batch size during the export. It is
+harmless, the export checks itself right after.
 
 Now the real run, 15 epochs on all 20,000 images:
 
 ```bash
 make train
 ```
+
+Here is my full run so you know what good looks like:
+
+```text
+loaded 20000 train / 1000 val in 6s, image (1, 32, 128), charset='0123456789ABCDEFGHJKLMNOPQRSTUVWXYZ', device=mps
+epoch  1  loss 4.285  val_acc 0.000  (52s)  e.g. 21BH0127WN -> 
+epoch  2  loss 3.139  val_acc 0.000  (46s)  e.g. 21BH0127WN -> 21
+epoch  3  loss 1.249  val_acc 0.721  (45s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch  4  loss 0.066  val_acc 0.847  (45s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch  5  loss 0.023  val_acc 0.940  (44s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch  6  loss 0.011  val_acc 0.930  (45s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch  7  loss 0.006  val_acc 0.926  (44s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch  8  loss 0.004  val_acc 0.978  (45s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch  9  loss 0.002  val_acc 0.992  (44s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch 10  loss 0.001  val_acc 0.990  (45s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch 11  loss 0.001  val_acc 0.990  (44s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch 12  loss 0.001  val_acc 0.990  (45s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch 13  loss 0.001  val_acc 0.992  (44s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch 14  loss 0.001  val_acc 0.991  (45s)  e.g. 21BH0127WN -> 21BH0127WN
+epoch 15  loss 0.001  val_acc 0.990  (45s)  e.g. 21BH0127WN -> 21BH0127WN
+exported artifacts/model.onnx (4.8 MB), max diff vs torch 1.03e-05
+done. best val exact-match accuracy 0.992; artifacts in artifacts
+```
+
+How to read it:
+
+* **epoch** is one full pass over all 20,000 training images. With batch size 64 that is 313 small
+  update steps per epoch
+* **loss** is how wrong the model is on the training images. Lower is better. It should keep falling
+* **val_acc** is the share of the 1,000 validation plates read exactly right, every character. `0.992`
+  means 992 of them. These plates use a font the model never saw in training
+* **e.g.** shows one validation plate and what the model read for it. Blank in epoch 1 is normal. The
+  model starts out predicting "nothing here" everywhere until it learns where the characters are
+* Accuracy sits at 0 for two epochs then jumps to 72% in epoch 3. Models trained with CTC loss often
+  do this, so don't stop a run early because the first epochs look bad
+* Accuracy dips in epochs 6 and 7 even though the loss keeps falling. The learning rate is near its
+  peak around there, so the model moves around a bit. It settles once the rate comes down
+* The best epoch gets saved, not the last one. Here that was epoch 9 with 99.2%
+* Tiny loss with low val_acc would mean the model memorised the training plates without learning to
+  read. Tiny loss with high val_acc, like here, is what you want
+
+The same numbers are saved in `artifacts/metrics.json` if you want to plot them:
+
+```json
+{
+  "best_val_acc": 0.992,
+  "history": [
+    {"epoch": 1, "loss": 4.285, "val_acc": 0.0},
+    {"epoch": 2, "loss": 3.139, "val_acc": 0.0},
+    {"epoch": 3, "loss": 1.249, "val_acc": 0.721}
+  ]
+}
+```
+
+I've shortened the history there. The real file has all 15 epochs.
 
 On an Apple Silicon Mac this took about 45 seconds per epoch. On a plain CPU expect roughly twice
 that. When it finishes you will find these in `artifacts/`:
@@ -148,13 +243,28 @@ Training already exports at the end. To do it again by hand:
 make export
 ```
 
-It prints the largest difference between PyTorch and ONNX Runtime outputs on the same input. You
-should see something around `1e-05`. If it is ever above `1e-3` the export stops with an error.
+It prints the largest difference between PyTorch and ONNX Runtime outputs on the same input:
+
+```text
+exported ../artifacts/model.onnx (4.8 MB), max diff vs torch 1.38e-05
+```
+
+Anything around `1e-05` is fine. That is a difference in the fifth decimal place, far too small to
+change a single letter. If it is ever above `1e-3` the export stops with an error. A
+`DeprecationWarning` about the legacy TorchScript exporter above that line is also fine.
 
 ## Step 6: run the API
 
 ```bash
 make serve
+```
+
+```text
+INFO:     Will watch for changes in these directories: ['/Users/you/ocr-demo/serve']
+INFO:     Uvicorn running on http://127.0.0.1:8080 (Press CTRL+C to quit)
+INFO:     Started server process [31501]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
 ```
 
 Open http://localhost:8080 and click **Read another plate**. The page picks a random validation
@@ -174,7 +284,29 @@ You will get back something like this:
 ```
 
 `needs_review` turns true when the reading does not match a valid plate format or when the confidence
-is below 0.9. Those are the cases you would want a person to look at.
+is below 0.9. Those are the cases you would want a person to look at. `latency_ms` will jump around
+on a laptop. The first request is always the slowest.
+
+Two more checks worth doing:
+
+```bash
+curl localhost:8080/healthz
+```
+
+```text
+{"status":"ok","model_version":"dev","charset_size":35}
+```
+
+```bash
+curl -F file=@Makefile localhost:8080/predict
+```
+
+```text
+{"detail":"not a valid image"}
+```
+
+That second one is on purpose. Sending a file that is not an image should give a clean 400 error and
+not crash the server.
 
 ## Step 7: run the same container Cloud Run will run (optional)
 
@@ -183,7 +315,18 @@ make docker-run
 ```
 
 This copies the model and the validation plates into `serve/model/`, builds the image and starts it on
-port 8080.
+port 8080. The end of the output looks like this:
+
+```text
+ => exporting to image
+ => => naming to docker.io/library/ocr-api:latest
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+```
+
+The same `curl` commands from Step 6 work against it.
 
 # Part 2: run it on Google Cloud
 
@@ -209,6 +352,16 @@ Skip the login line if you are in Cloud Shell.
 This turns on Cloud Storage, Vertex AI, Artifact Registry, Cloud Build and Cloud Run, then creates the
 bucket and a Docker repository. Running it twice is fine, it skips anything that already exists.
 
+```text
+Operation "operations/acf.p2-123456789012-4f1c2b7e" finished successfully.
+Creating gs://my-project-ocr-workshop/...
+Create request issued for: [ocr-workshop]
+Created repository [ocr-workshop].
+Ready: project=my-project region=us-central1 bucket=gs://my-project-ocr-workshop repo=ocr-workshop
+```
+
+The last line is the one that matters. If you see it, everything is in place.
+
 ## Step 10: upload the dataset
 
 ```bash
@@ -216,6 +369,16 @@ bucket and a Docker repository. Running it twice is fine, it skips anything that
 ```
 
 The images go to `gs://<project>-ocr-workshop/data/`.
+
+```text
+Copying file://data/plates/train/21BH0000GM_16285.jpg to gs://my-project-ocr-workshop/data/train/21BH0000GM_16285.jpg
+Copying file://data/plates/train/21BH0055HU_11708.jpg to gs://my-project-ocr-workshop/data/train/21BH0055HU_11708.jpg
+...
+  Completed files 21000/21000
+Uploaded. Files in bucket: 20000
+```
+
+`Files in bucket` counts only the training folder, so 20000 is the number you want.
 
 ## Step 11: train on Vertex AI
 
@@ -227,6 +390,50 @@ The script builds the training image with Cloud Build, pushes it to Artifact Reg
 Vertex AI custom job on an `n1-standard-4` machine with one NVIDIA T4 GPU. It then streams the logs.
 Vertex AI mounts your bucket at `/gcs/<bucket>`, so `train.py` reads and writes it like a normal folder.
 
+The output comes in three parts. First Cloud Build builds the training image:
+
+```text
+Creating temporary archive of 5 file(s) totalling 6.2 KiB before compression.
+Uploading tarball of [train] to [gs://my-project_cloudbuild/source/1763791502.4-ab12cd34.tgz]
+...
+DONE
+```
+
+Then the job is created:
+
+```text
+Job: projects/123456789012/locations/us-central1/customJobs/4517283941023744000
+Console: https://console.cloud.google.com/vertex-ai/training/custom-jobs?project=my-project
+```
+
+Then the training logs stream in. It is the same log you saw on your laptop, with a timestamp and
+`workerpool0-0` (the machine running it) in front of each line:
+
+```text
+INFO  2026-11-22 10:15:02 +0530  service        Waiting for job to be provisioned.
+INFO  2026-11-22 10:19:40 +0530  service        Job is running.
+INFO  2026-11-22 10:21:08 +0530  workerpool0-0  loaded 20000 train / 1000 val in 41s, image (1, 32, 128), charset='0123456789ABCDEFGHJKLMNOPQRSTUVWXYZ', device=cuda
+INFO  2026-11-22 10:21:26 +0530  workerpool0-0  epoch  1  loss 4.301  val_acc 0.000  (18s)  e.g. 21BH0127WN -> 
+INFO  2026-11-22 10:21:43 +0530  workerpool0-0  epoch  2  loss 3.152  val_acc 0.000  (17s)  e.g. 21BH0127WN -> 21
+INFO  2026-11-22 10:22:00 +0530  workerpool0-0  epoch  3  loss 1.307  val_acc 0.704  (17s)  e.g. 21BH0127WN -> 21BH0127WN
+...
+INFO  2026-11-22 10:25:16 +0530  workerpool0-0  epoch 15  loss 0.001  val_acc 0.990  (17s)  e.g. 21BH0127WN -> 21BH0127WN
+INFO  2026-11-22 10:25:19 +0530  workerpool0-0  done. best val exact-match accuracy 0.991; artifacts in /gcs/my-project-ocr-workshop/models/run-20261122-101455
+INFO  2026-11-22 10:26:02 +0530  service        Job completed successfully.
+Model artifacts: gs://my-project-ocr-workshop/models/run-20261122-101455/
+```
+
+A few things to notice:
+
+* Expect around 5 minutes of `Waiting for job to be provisioned`. Google is finding a machine with a
+  GPU and pulling your image. Nothing is wrong
+* `device=cuda` means the GPU is being used. With `ACCELERATOR=none` you will see `device=cpu` and
+  each epoch takes a lot longer
+* Loading takes longer than on a laptop because the 20,000 images are read from Cloud Storage
+* Your accuracy will not match mine to the last digit. Training is random. Anything around 98% to 99%
+  is a good run
+* You can close the terminal while it streams. The job keeps running in the cloud
+
 New projects often have no GPU quota. If the job fails with a quota error, train on CPU instead:
 
 ```bash
@@ -236,15 +443,40 @@ ACCELERATOR=none ./scripts/03_train_vertex.sh
 Other ways to keep an eye on it:
 
 ```bash
-gcloud ai custom-jobs list --region=us-central1 --limit=3
+gcloud ai custom-jobs list --region=us-central1 --limit=3 --format="table(displayName,state,createTime)"
 ```
+
+```text
+DISPLAY_NAME             STATE                CREATE_TIME
+ocr-run-20261122-101455  JOB_STATE_SUCCEEDED  2026-11-22T04:45:03.512Z
+```
+
+While it trains the state is `JOB_STATE_PENDING` and then `JOB_STATE_RUNNING`.
 
 ```bash
 BUCKET=$(gcloud config get-value project)-ocr-workshop
 gcloud storage ls gs://$BUCKET/models/
 ```
 
-Each run writes to its own folder, `models/run-<date>-<time>/`, so nothing gets overwritten.
+```text
+gs://my-project-ocr-workshop/models/run-20261122-101455/
+```
+
+Each run writes to its own folder, `models/run-<date>-<time>/`, so nothing gets overwritten. Look
+inside one:
+
+```bash
+gcloud storage ls gs://$BUCKET/models/run-20261122-101455/
+```
+
+```text
+gs://my-project-ocr-workshop/models/run-20261122-101455/metrics.json
+gs://my-project-ocr-workshop/models/run-20261122-101455/model.json
+gs://my-project-ocr-workshop/models/run-20261122-101455/model.onnx
+gs://my-project-ocr-workshop/models/run-20261122-101455/model.pt
+```
+
+Use your own folder name in place of `run-20261122-101455`.
 
 ## Step 12: deploy to Cloud Run
 
@@ -255,6 +487,24 @@ Each run writes to its own folder, `models/run-<date>-<time>/`, so nothing gets 
 This takes the model from your last Vertex AI run, copies it into `serve/model/` with the validation
 plates for the demo page, then runs `gcloud run deploy --source serve`. Cloud Build builds the image
 and Cloud Run gives you an HTTPS URL. The first deploy takes about three minutes.
+
+```text
+Building using Dockerfile and deploying container to Cloud Run service [ocr-api] in project [my-project] region [us-central1]
+OK Building and deploying new service... Done.
+  OK Uploading sources...
+  OK Building Container...
+  OK Creating Revision...
+  OK Routing traffic...
+  OK Setting IAM Policy...
+Done.
+Service [ocr-api] revision [ocr-api-00001-xk2] has been deployed and is serving 100 percent of traffic.
+Service URL: https://ocr-api-123456789012.us-central1.run.app
+Live at: https://ocr-api-123456789012.us-central1.run.app
+{"status":"ok","model_version":"run-20261122-101455","charset_size":35}
+```
+
+The last line is the service answering its own health check. `model_version` tells you which training
+run it is serving. If you deployed with `MODEL_SRC=artifacts` it says `local` instead.
 
 If the training job is still running you can deploy the model that comes with the repo:
 
@@ -268,6 +518,13 @@ Then try it:
 curl -F file=@plate.jpg https://YOUR-SERVICE-URL/predict
 ```
 
+```text
+{"text":"21BH0680KD","plate":"21 BH 0680 KD","valid_format":true,"confidence":0.9536,"needs_review":false,"latency_ms":3.4}
+```
+
+Same answer as on your laptop, because it is the same model file. Open the URL in a browser (or on
+your phone) to get the demo page.
+
 The service runs with 1 CPU, 1 GiB memory, up to 8 requests at a time per instance and scales between
 0 and 3 instances. It is public so the demo works on any phone. Lock it down before you use it for
 anything real.
@@ -276,6 +533,18 @@ anything real.
 
 ```bash
 ./scripts/99_cleanup.sh
+```
+
+```text
+Delete Cloud Run 'ocr-api', bucket gs://my-project-ocr-workshop and repo 'ocr-workshop' in my-project? [y/N] y
+Deleting [ocr-api]...done.
+Removing objects:
+  Completed 21007/21007
+Removing buckets:
+  Completed 1/1
+Deleted repository [ocr-workshop].
+Deleted repository [cloud-run-source-deploy].
+Cleaned up.
 ```
 
 It asks before deleting anything. It removes the Cloud Run service, the bucket and both image
