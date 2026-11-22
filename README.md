@@ -328,6 +328,14 @@ INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
 
 The same `curl` commands from Step 6 work against it.
 
+To keep it running in the background instead, use Docker Compose (`compose.yaml`):
+
+```bash
+make up      # copy model + samples, build, start detached (restarts automatically, has a health check)
+make logs    # follow the logs
+make down    # stop and remove the container
+```
+
 # Part 2: run it on Google Cloud
 
 All scripts read their settings from `scripts/config.sh`. By default they use your current gcloud
